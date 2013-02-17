@@ -292,9 +292,20 @@
 
         },
 
-        // Custom error
+        /** 
+         * Custom error
+         * Handle error. Expect object that contain attribute type and optional
+         * attribute message. Example:
+         * <pre>
+         * {
+         *      type: 'error',
+         *      message: 'Some error message from ajax call, or server custom message'
+         * }
+         * </pre>
+         * @param object xhr
+        */
         _error: function infscr_error(xhr) {
-
+            xhr = xhr || {};
             var opts = this.options;
 
             // if behavior is defined and this function is extended, call that instead of default
@@ -303,13 +314,13 @@
                 return;
             }
 
-            if (xhr !== 'destroy' && xhr !== 'end') {
-                xhr = 'unknown';
+            if (xhr.type === undefined) {
+                xhr.type = 'unknown';
             }
 
             this._debug('Error', xhr);
 
-            if (xhr === 'end') {
+            if (xhr.type === 'end') {
                 this._showdonemsg();
             }
 
@@ -326,7 +337,7 @@
             callback = this.options.callback, // GLOBAL OBJECT FOR CALLBACK
             result = (opts.state.isDone) ? 'done' : (!opts.appendCallback) ? 'no-append' : 'append',
             frag;
-
+            
             // if behavior is defined and this function is extended, call that instead of default
             if (!!opts.behavior && this['_loadcallback_'+opts.behavior] !== undefined) {
                 this['_loadcallback_'+opts.behavior].call(this,box,data);
@@ -349,7 +360,7 @@
 					var children = box.children();
 					// if it didn't return anything
 					if (children.length === 0) {
-						return this._error('end');
+						return this._error({type:'end'});
 					}
 
 					// use a documentFragment because it works when content is going into a table or UL
@@ -512,7 +523,7 @@
         destroy: function infscr_destroy() {
             this.options.state.isDestroyed = true;
 			this.options.loading.finished();
-            return this._error('destroy');
+            return this._error({ type: 'destroy' });
         },
 
         // Set pause value to false
@@ -525,13 +536,13 @@
             this._pausing('resume');
         },
 
-		beginAjax: function infscr_ajax(opts) {
-			var instance = this,
-				path = opts.path,
-				box, desturl, method, condition;
+        beginAjax: function infscr_ajax(opts) {
+            var instance = this,
+                    path = opts.path,
+                    box, desturl, method, condition;
 
-			// increment the URL bit. e.g. /page/3/
-			opts.state.currPage++;
+            // increment the URL bit. e.g. /page/3/
+            opts.state.currPage++;
 
             // Manually control maximum page 
             if ( opts.maxPage != undefined && opts.state.currPage > opts.maxPage ){
@@ -553,8 +564,16 @@
 			switch (method) {
 				case 'html+callback':
 					instance._debug('Using HTML via .load() method');
-					box.load(desturl + ' ' + opts.itemSelector, undefined, function infscr_ajax_callback(responseText) {
-						instance._loadcallback(box, responseText, desturl);
+					box.load(desturl + ' ' + opts.itemSelector, undefined, function infscr_ajax_callback(responseText, textStatus, jqXHR) {
+						if (jqXHR.status >= 300) {
+                                                    instance._error({type: 'http-error', message: (typeof (jqXHR.responseText) !== 'undefined') ? jqXHR.responseText : jqXHR.statusText });
+                                                } else {
+                                                    if (!responseText) {
+                                                        instance._error({type: 'end' });
+                                                    } else {
+                                                        instance._loadcallback(box, responseText, desturl);
+                                                    }
+                                                }
 					});
 
 					break;
@@ -566,12 +585,16 @@
 						url: desturl,
 						dataType: opts.dataType,
 						complete: function infscr_ajax_callback(jqXHR, textStatus) {
-							condition = (typeof (jqXHR.isResolved) !== 'undefined') ? (jqXHR.isResolved()) : (textStatus === "success" || textStatus === "notmodified");
-							if (condition) {
-								instance._loadcallback(box, jqXHR.responseText, desturl);
-							} else {
-								instance._error('end');
-							}
+                                                        if (jqXHR.status >= 300) {
+                                                            instance._error({ type: 'http-error', message: (typeof (jqXHR.responseText) !== 'undefined') ? jqXHR.responseText : jqXHR.statusText });
+                                                        } else {
+                                                            condition = (typeof (jqXHR.isResolved) !== 'undefined') ? (jqXHR.isResolved()) : (textStatus === "success" || textStatus === "notmodified");
+                                                            if (condition) {
+                                                                    instance._loadcallback(box, jqXHR.responseText, desturl);
+                                                            } else {
+                                                                    instance._error({ type: 'end' });
+                                                            }
+                                                        }
 						}
 					});
 
@@ -593,24 +616,24 @@
 									if (condition) {
 										instance._loadcallback(box, theData);
 									} else {
-										instance._error('end');
+										instance._error({ type: 'end' });
 									}
 								} else {
 									instance._debug("template must be defined.");
-									instance._error('end');
+									instance._error({ type: 'end' });
 								}
 							} else {
 								// if appendCallback is false, we will pass in the JSON object. you should handle it yourself in your callback.
 								if (condition) {
 									instance._loadcallback(box, data, desturl);
 								} else {
-									instance._error('end');
+									instance._error({ type: 'end' });
 								}
 							}
 						},
-						error: function() {
+						error: function(jqXHR, textStatus) {
 							instance._debug("JSON ajax request failed.");
-							instance._error('end');
+							instance._error({ type: 'http-error', message: (typeof (jqXHR.responseText) !== 'undefined') ? jqXHR.responseText : jqXHR.statusText });
 						}
 					});
 
