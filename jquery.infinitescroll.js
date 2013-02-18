@@ -320,7 +320,7 @@
 
             this._debug('Error', xhr);
 
-            if (xhr.type === 'end') {
+            if (xhr.type === 'end' || xhr.type === 'http-error') {
                 this._showdonemsg();
             }
 
